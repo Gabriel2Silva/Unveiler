@@ -22,7 +22,6 @@ Unveiler brings the familiar Windows 7-Zip experience to Linux, making it easy f
 - GTK 4
 - libadwaita
 - pkg-config
-- Python 3 (for tests only)
 
 On Ubuntu/Debian:
 ```bash
