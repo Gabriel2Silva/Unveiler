@@ -62,7 +62,7 @@ Unveiler loads 7-Zip's `7z.so` plugin at runtime through a C bridge layer:
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────┐
-│  GTK4 App    │────▶│  C Bridge    │────▶│  7z.so   │
+│  GTK4 App    │───▶│  C Bridge    │───▶│  7z.so   │
 │  (C / GLib)  │     │  (C++ / COM) │     │  (7-Zip) │
 └──────────────┘     └──────────────┘     └──────────┘
 ```
