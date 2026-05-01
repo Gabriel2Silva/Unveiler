@@ -5,6 +5,12 @@ Unveiler brings the familiar Windows 7-Zip experience to Linux, making it easy f
 
 ![GNOME](https://img.shields.io/badge/GNOME-GTK4%20%2B%20libadwaita-blue) ![GitHub top language](https://img.shields.io/github/languages/top/Gabriel2Silva/Unveiler)
 
+
+<p align="center">
+  <img width="800" height="600" src="https://github.com/user-attachments/assets/ef03c7a1-8dcd-4424-acb1-cfee05ce55cc" />
+</p>
+
+
 ## Features
 
 - Browse and extract archives with a native GNOME interface
