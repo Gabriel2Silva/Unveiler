@@ -24,7 +24,11 @@ PROGPATH_STATIC = $(O)/$(PROG)s
 
 
 ifneq ($(CC), xlc)
-CFLAGS_WARN_WALL = -Werror -Wall -Wextra
+WERROR_FLAGS =
+ifdef ENABLE_WERROR
+WERROR_FLAGS = -Werror
+endif
+CFLAGS_WARN_WALL = $(WERROR_FLAGS) -Wall -Wextra
 endif
 
 # for object file

@@ -47,4 +47,17 @@ with zipfile.ZipFile(os.path.join(outdir, "dotpaths.zip"), "w") as zf:
     zf.writestr("dir/./file.txt", "dot-in-middle\n")
     zf.writestr("safe.txt", "plain\n")
 
+# 8. Archive with corrupted file data to trigger per-entry extract failure
+corrupt_path = os.path.join(outdir, "corrupt.zip")
+with zipfile.ZipFile(corrupt_path, "w", compression=zipfile.ZIP_STORED) as zf:
+    zf.writestr("bad.txt", "hello\n")
+
+with open(corrupt_path, "r+b") as f:
+    data = f.read()
+    pos = data.find(b"hello\n")
+    if pos == -1:
+        raise RuntimeError("could not locate corrupt.zip payload")
+    f.seek(pos)
+    f.write(b"jello\n")
+
 print(f"Generated test archives in {outdir}")

@@ -438,6 +438,25 @@ TEST(extract_result_fields)
   free(p);
 }
 
+TEST(corrupt_entry_not_counted_as_extracted)
+{
+  char *p = archive_path(archdir, "corrupt.zip");
+  char *dest = make_extract_dir(tmpdir, "extract_corrupt");
+
+  FmArchive *ar = fm_archive_open(bridge, p);
+  ASSERT(ar != NULL);
+
+  FmExtractResult r = fm_archive_extract_ex(ar, NULL, 0, dest, NULL, NULL);
+  ASSERT(r.ok);
+  ASSERT(r.extracted == 0);
+  ASSERT(r.errors == 1);
+
+  fm_archive_close(ar);
+  rmrf(dest);
+  free(dest);
+  free(p);
+}
+
 /* ---- main ---- */
 
 int main(int argc, char *argv[])
@@ -468,6 +487,7 @@ int main(int argc, char *argv[])
   RUN(open_invalid_file);
   RUN(null_args_safe);
   RUN(extract_result_fields);
+  RUN(corrupt_entry_not_counted_as_extracted);
 
   printf("\nResults: %d passed, %d failed\n", g_pass, g_fail);
 

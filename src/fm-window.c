@@ -69,6 +69,15 @@ remove_dir_recursive(const char *path)
   g_rmdir(path);
 }
 
+static void
+clear_archive_stack(FmWindow *self)
+{
+  if (!self->archive_stack)
+    return;
+
+  g_ptr_array_set_size(self->archive_stack, 0);
+}
+
 /* sort: directories first, then alphabetical by name */
 static int
 item_compare(gconstpointer a, gconstpointer b, gpointer ud)
@@ -276,6 +285,192 @@ file_looks_like_archive(const char *name)
   return FALSE;
 }
 
+static gboolean
+is_safe_relative_extract_path(const char *path)
+{
+  int level = 0;
+  const char *part;
+
+  if (!path || !*path || path[0] == '/' || path[0] == '\\')
+    return FALSE;
+
+  part = path;
+  for (const char *p = path; ; p++) {
+    if (*p == '\0' || *p == '/' || *p == '\\') {
+      gsize len = (gsize)(p - part);
+      if (len == 2 && part[0] == '.' && part[1] == '.') {
+        level--;
+        if (level < 0)
+          return FALSE;
+      } else if (!(len == 0 || (len == 1 && part[0] == '.'))) {
+        level++;
+      }
+      if (*p == '\0')
+        break;
+      part = p + 1;
+    }
+  }
+
+  return TRUE;
+}
+
+static char *
+fallback_extract_name(const char *archive_path)
+{
+  g_autofree char *basename = g_path_get_basename(archive_path ? archive_path : "data");
+  char *dot = strrchr(basename, '.');
+  if (dot)
+    *dot = '\0';
+  if (!*basename)
+    return g_strdup("data");
+  return g_strdup(basename);
+}
+
+static char *
+archive_index_output_path(FmWindow *self, uint32_t index)
+{
+  char *path = fm_archive_get_path(self->archive, index);
+
+  if (!path || !*path) {
+    g_free(path);
+    return fallback_extract_name(self->archive_path);
+  }
+
+  for (char *p = path; *p; p++)
+    if (*p == '\\')
+      *p = '/';
+
+  return path;
+}
+
+static char *
+file_item_output_path(FmWindow *self, FmFileItem *item)
+{
+  uint32_t index = fm_file_item_get_index(item);
+
+  if (index != UINT32_MAX)
+    return archive_index_output_path(self, index);
+
+  if (self->current_dir && self->current_dir[0] != '\0')
+    return g_strdup_printf("%s%s", self->current_dir, fm_file_item_get_name(item));
+
+  return g_strdup(fm_file_item_get_name(item));
+}
+
+static void
+append_index_unique(GArray *indices, GHashTable *seen, uint32_t index)
+{
+  gpointer key = GUINT_TO_POINTER(index + 1);
+
+  if (g_hash_table_contains(seen, key))
+    return;
+
+  g_hash_table_add(seen, key);
+  g_array_append_val(indices, index);
+}
+
+static void
+append_child_indices_for_prefix(FmWindow *self,
+                                const char *prefix,
+                                GArray *indices,
+                                GHashTable *seen)
+{
+  uint32_t total = fm_archive_get_count(self->archive);
+
+  for (uint32_t j = 0; j < total; j++) {
+    char *path = fm_archive_get_path(self->archive, j);
+    if (!path)
+      continue;
+
+    for (char *p = path; *p; p++)
+      if (*p == '\\')
+        *p = '/';
+
+    if (g_str_has_prefix(path, prefix))
+      append_index_unique(indices, seen, j);
+
+    free(path);
+  }
+}
+
+static GArray *
+collect_extract_indices(FmWindow *self)
+{
+  GtkBitset *bitset = gtk_selection_model_get_selection(
+      GTK_SELECTION_MODEL(self->selection));
+  guint64 n_selected = gtk_bitset_get_size(bitset);
+  GArray *indices = g_array_new(FALSE, FALSE, sizeof(uint32_t));
+  GHashTable *seen = g_hash_table_new(g_direct_hash, g_direct_equal);
+
+  if (n_selected == 0) {
+    uint32_t n = g_list_model_get_n_items(G_LIST_MODEL(self->store));
+    for (uint32_t i = 0; i < n; i++) {
+      FmFileItem *item = g_list_model_get_item(G_LIST_MODEL(self->store), i);
+      uint32_t idx = fm_file_item_get_index(item);
+
+      if (idx != UINT32_MAX)
+        append_index_unique(indices, seen, idx);
+
+      if (fm_file_item_is_dir(item)) {
+        const char *dir_name = fm_file_item_get_name(item);
+        g_autofree char *prefix = g_strdup_printf("%s%s/",
+            self->current_dir, dir_name);
+        append_child_indices_for_prefix(self, prefix, indices, seen);
+      }
+
+      g_object_unref(item);
+    }
+  } else {
+    GtkBitsetIter iter;
+    guint pos;
+
+    if (gtk_bitset_iter_init_first(&iter, bitset, &pos)) {
+      do {
+        FmFileItem *item = g_list_model_get_item(G_LIST_MODEL(self->store), pos);
+        if (!item)
+          continue;
+
+        uint32_t idx = fm_file_item_get_index(item);
+        if (idx != UINT32_MAX)
+          append_index_unique(indices, seen, idx);
+
+        if (fm_file_item_is_dir(item)) {
+          const char *dir_name = fm_file_item_get_name(item);
+          g_autofree char *prefix = g_strdup_printf("%s%s/",
+              self->current_dir, dir_name);
+          append_child_indices_for_prefix(self, prefix, indices, seen);
+        }
+
+        g_object_unref(item);
+      } while (gtk_bitset_iter_next(&iter, &pos));
+    }
+  }
+
+  gtk_bitset_unref(bitset);
+  g_hash_table_destroy(seen);
+  return indices;
+}
+
+static gboolean
+extract_targets_conflict(FmWindow *self, GArray *indices, const char *dest)
+{
+  for (guint i = 0; i < indices->len; i++) {
+    uint32_t index = g_array_index(indices, uint32_t, i);
+    if (fm_archive_is_dir(self->archive, index))
+      continue;
+
+    g_autofree char *relpath = archive_index_output_path(self, index);
+    if (!is_safe_relative_extract_path(relpath))
+      continue;
+
+    g_autofree char *fullpath = g_build_filename(dest, relpath, NULL);
+    if (g_file_test(fullpath, G_FILE_TEST_EXISTS))
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
 /* ---- signals ---- */
 
 static void
@@ -298,10 +493,11 @@ on_activate(GtkColumnView *cv, guint position, gpointer ud)
       char *tmpdir = mkdtemp(tmpl);
       if (tmpdir) {
         tmpdir = g_strdup(tmpdir);
+        g_autofree char *relpath = file_item_output_path(self, item);
         const char *name = fm_file_item_get_name(item);
         int rc = fm_archive_extract(self->archive, &idx, 1, tmpdir, NULL, NULL);
         if (rc > 0) {
-          g_autofree char *filepath = g_build_filename(tmpdir, name, NULL);
+          g_autofree char *filepath = g_build_filename(tmpdir, relpath, NULL);
 
           /* try opening as nested archive if it looks like one */
           if (file_looks_like_archive(name)) {
@@ -516,17 +712,20 @@ typedef struct {
   GArray         *indices;
   char           *dest;
   FmExtractResult result;
-  volatile uint64_t completed;
-  volatile uint64_t total;
-  volatile gboolean done;
+  GMutex         mutex;
+  uint64_t       completed;
+  uint64_t       total;
+  gboolean       done;
 } ExtractJob;
 
 static void
 extract_progress_cb(uint64_t completed, uint64_t total, void *ud)
 {
   ExtractJob *job = ud;
+  g_mutex_lock(&job->mutex);
   job->completed = completed;
   job->total = total;
+  g_mutex_unlock(&job->mutex);
 }
 
 static gpointer
@@ -540,7 +739,9 @@ extract_thread_func(gpointer ud)
   else
     job->result = fm_archive_extract_ex(job->archive,
         NULL, 0, job->dest, extract_progress_cb, job);
+  g_mutex_lock(&job->mutex);
   job->done = TRUE;
+  g_mutex_unlock(&job->mutex);
   return NULL;
 }
 
@@ -555,83 +756,11 @@ on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
   if (!folder || !self->archive) return;
 
   g_autofree char *dest = g_file_get_path(folder);
+  GArray *indices = collect_extract_indices(self);
 
-  /* collect selected archive indices */
-  GtkBitset *bitset = gtk_selection_model_get_selection(
-      GTK_SELECTION_MODEL(self->selection));
-  guint64 n_selected = gtk_bitset_get_size(bitset);
-
-  GArray *indices = g_array_new(FALSE, FALSE, sizeof(uint32_t));
-
-  if (n_selected == 0) {
-    /* nothing selected — extract everything in current dir view */
-    uint32_t n = g_list_model_get_n_items(G_LIST_MODEL(self->store));
-    for (uint32_t i = 0; i < n; i++) {
-      FmFileItem *item = g_list_model_get_item(G_LIST_MODEL(self->store), i);
-      uint32_t idx = fm_file_item_get_index(item);
-      if (idx != UINT32_MAX)
-        g_array_append_val(indices, idx);
-      /* for directories, also collect all children from the archive */
-      if (fm_file_item_is_dir(item)) {
-        const char *dir_name = fm_file_item_get_name(item);
-        g_autofree char *prefix = g_strdup_printf("%s%s/",
-            self->current_dir, dir_name);
-        uint32_t total = fm_archive_get_count(self->archive);
-        for (uint32_t j = 0; j < total; j++) {
-          char *p = fm_archive_get_path(self->archive, j);
-          if (p) {
-            for (char *c = p; *c; c++) if (*c == '\\') *c = '/';
-            if (g_str_has_prefix(p, prefix))
-              g_array_append_val(indices, j);
-            free(p);
-          }
-        }
-      }
-      g_object_unref(item);
-    }
-  } else {
-    /* extract selected items */
-    GtkBitsetIter iter;
-    guint pos;
-    if (gtk_bitset_iter_init_first(&iter, bitset, &pos)) {
-      do {
-        FmFileItem *item = g_list_model_get_item(G_LIST_MODEL(self->store), pos);
-        if (!item) continue;
-        uint32_t idx = fm_file_item_get_index(item);
-        if (idx != UINT32_MAX)
-          g_array_append_val(indices, idx);
-        /* include children of selected directories */
-        if (fm_file_item_is_dir(item)) {
-          const char *dir_name = fm_file_item_get_name(item);
-          g_autofree char *prefix = g_strdup_printf("%s%s/",
-              self->current_dir, dir_name);
-          uint32_t total = fm_archive_get_count(self->archive);
-          for (uint32_t j = 0; j < total; j++) {
-            char *p = fm_archive_get_path(self->archive, j);
-            if (p) {
-              for (char *c = p; *c; c++) if (*c == '\\') *c = '/';
-              if (g_str_has_prefix(p, prefix))
-                g_array_append_val(indices, j);
-              free(p);
-            }
-          }
-        }
-        g_object_unref(item);
-      } while (gtk_bitset_iter_next(&iter, &pos));
-    }
-  }
-  gtk_bitset_unref(bitset);
-
-  /* check if destination has existing files and ask overwrite policy upfront */
+  /* ask only if a selected entry would overwrite an existing destination path */
   {
-    gboolean dest_has_files = FALSE;
-    GDir *ddir = g_dir_open(dest, 0, NULL);
-    if (ddir) {
-      if (g_dir_read_name(ddir)) dest_has_files = TRUE;
-      g_dir_close(ddir);
-    }
-
-    if (dest_has_files) {
+    if (extract_targets_conflict(self, indices, dest)) {
       GtkWidget *odlg = gtk_dialog_new_with_buttons(
           "Files Exist", GTK_WINDOW(self),
           GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
@@ -644,7 +773,7 @@ on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
       gtk_widget_set_margin_top(oc, 8);
       gtk_widget_set_margin_bottom(oc, 8);
       gtk_box_append(GTK_BOX(oc),
-          gtk_label_new("Destination folder already contains files."));
+          gtk_label_new("Some extracted files already exist in the destination."));
 
       ModalDlgData odata = { FALSE, GTK_RESPONSE_CANCEL };
       g_signal_connect(odlg, "response", G_CALLBACK(on_modal_response), &odata);
@@ -669,6 +798,7 @@ on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
   job->indices = indices;
   job->dest = g_strdup(dest);
   job->done = FALSE;
+  g_mutex_init(&job->mutex);
 
   GtkWidget *pdlg = gtk_dialog_new_with_buttons(
       "Extracting…", GTK_WINDOW(self),
@@ -695,10 +825,23 @@ on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
 
   g_thread_unref(g_thread_new("extract", extract_thread_func, job));
 
-  while (!job->done) {
+  while (TRUE) {
+    gboolean done;
+    uint64_t completed;
+    uint64_t total;
+
+    g_mutex_lock(&job->mutex);
+    done = job->done;
+    completed = job->completed;
+    total = job->total;
+    g_mutex_unlock(&job->mutex);
+
+    if (done)
+      break;
+
     g_main_context_iteration(NULL, FALSE);
-    if (job->total > 0) {
-      double frac = (double)job->completed / (double)job->total;
+    if (total > 0) {
+      double frac = (double)completed / (double)total;
       gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(pbar), frac);
       g_autofree char *ptext = g_strdup_printf("%.0f%%", frac * 100);
       gtk_progress_bar_set_text(GTK_PROGRESS_BAR(pbar), ptext);
@@ -713,6 +856,7 @@ on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
   FmExtractResult r = job->result;
   g_array_free(indices, TRUE);
   g_free(job->dest);
+  g_mutex_clear(&job->mutex);
   g_free(job);
 
   g_autofree char *msg = NULL;
@@ -1032,54 +1176,20 @@ on_drag_prepare(GtkDragSource *src, double x, double y, gpointer ud)
   FmWindow *self = FM_WINDOW(ud);
   if (!self->archive) return NULL;
 
-  /* collect selected items */
-  GtkBitset *bitset = gtk_selection_model_get_selection(
-      GTK_SELECTION_MODEL(self->selection));
-  guint64 n_sel = gtk_bitset_get_size(bitset);
-  if (n_sel == 0) { gtk_bitset_unref(bitset); return NULL; }
+  GArray *indices = collect_extract_indices(self);
+  if (indices->len == 0) {
+    g_array_free(indices, TRUE);
+    return NULL;
+  }
 
   /* create temp dir */
   char tmpl[] = "/tmp/7zfm-XXXXXX";
   char *tmpdir = mkdtemp(tmpl);
-  if (!tmpdir) { gtk_bitset_unref(bitset); return NULL; }
-  tmpdir = g_strdup(tmpdir);
-
-  /* build index list */
-  GArray *indices = g_array_new(FALSE, FALSE, sizeof(uint32_t));
-  GtkBitsetIter iter;
-  guint pos;
-  if (gtk_bitset_iter_init_first(&iter, bitset, &pos)) {
-    do {
-      FmFileItem *item = g_list_model_get_item(G_LIST_MODEL(self->store), pos);
-      if (!item) continue;
-      uint32_t idx = fm_file_item_get_index(item);
-      if (idx != UINT32_MAX)
-        g_array_append_val(indices, idx);
-      /* include children of selected directories */
-      if (fm_file_item_is_dir(item)) {
-        const char *dname = fm_file_item_get_name(item);
-        g_autofree char *prefix = g_strdup_printf("%s%s/", self->current_dir, dname);
-        uint32_t total = fm_archive_get_count(self->archive);
-        for (uint32_t j = 0; j < total; j++) {
-          char *p = fm_archive_get_path(self->archive, j);
-          if (p) {
-            for (char *c = p; *c; c++) if (*c == '\\') *c = '/';
-            if (g_str_has_prefix(p, prefix))
-              g_array_append_val(indices, j);
-            free(p);
-          }
-        }
-      }
-      g_object_unref(item);
-    } while (gtk_bitset_iter_next(&iter, &pos));
-  }
-  gtk_bitset_unref(bitset);
-
-  if (indices->len == 0) {
+  if (!tmpdir) {
     g_array_free(indices, TRUE);
-    g_free(tmpdir);
     return NULL;
   }
+  tmpdir = g_strdup(tmpdir);
 
   /* extract to temp dir — blocks briefly */
   int rc = fm_archive_extract(self->archive,
@@ -1088,12 +1198,15 @@ on_drag_prepare(GtkDragSource *src, double x, double y, gpointer ud)
   g_array_free(indices, TRUE);
 
   if (rc <= 0) {
+    remove_dir_recursive(tmpdir);
     g_free(tmpdir);
     return NULL;
   }
 
-  gtk_label_set_text(GTK_LABEL(self->status),
-      g_strdup_printf("Dragging %d file%s…", rc, rc == 1 ? "" : "s"));
+  {
+    g_autofree char *status = g_strdup_printf("Dragging %d file%s…", rc, rc == 1 ? "" : "s");
+    gtk_label_set_text(GTK_LABEL(self->status), status);
+  }
 
   /* clean up previous drag temp */
   if (self->drag_cleanup_id) {
@@ -1104,7 +1217,6 @@ on_drag_prepare(GtkDragSource *src, double x, double y, gpointer ud)
     remove_dir_recursive(self->drag_temp_dir);
     g_clear_pointer(&self->drag_temp_dir, g_free);
   }
-  self->drag_temp_dir = tmpdir;
 
   /* enumerate top-level extracted items */
   GSList *file_list = NULL;
@@ -1118,7 +1230,13 @@ on_drag_prepare(GtkDragSource *src, double x, double y, gpointer ud)
     g_dir_close(dir);
   }
 
-  if (!file_list) return NULL;
+  if (!file_list) {
+    remove_dir_recursive(tmpdir);
+    g_free(tmpdir);
+    return NULL;
+  }
+
+  self->drag_temp_dir = tmpdir;
 
   GdkContentProvider *provider =
       gdk_content_provider_new_typed(GDK_TYPE_FILE_LIST, file_list);
@@ -1305,6 +1423,7 @@ void fm_window_open_archive(FmWindow *self, GFile *file)
     fm_archive_close(self->archive);
     self->archive = NULL;
   }
+  clear_archive_stack(self);
   g_clear_pointer(&self->archive_path, g_free);
 
   g_autofree char *path = g_file_get_path(file);

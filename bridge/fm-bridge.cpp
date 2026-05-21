@@ -86,8 +86,11 @@ public:
   AString CachedPassword;
   FmPasswordCb PasswordCb;
   void *PasswordUserData;
+  FmOverwriteCb OverwriteCb;
+  void *OverwriteUserData;
   AString ArchivePath;  /* for password callback context */
   UInt32 ErrorCount;    /* entries that failed during extraction */
+  bool CountingCurrentFile;
 };
 
 Z7_COM7F_IMF(CExtractCb::SetTotal(UInt64 total))
@@ -107,8 +110,11 @@ Z7_COM7F_IMF(CExtractCb::PrepareOperation(Int32)) { return S_OK; }
 Z7_COM7F_IMF(CExtractCb::SetOperationResult(Int32 opRes))
 {
   _outFileStream.Release();
-  if (opRes != NArchive::NExtract::NOperationResult::kOK)
+  if (CountingCurrentFile && opRes == NArchive::NExtract::NOperationResult::kOK)
+    ExtractedCount++;
+  else if (opRes != NArchive::NExtract::NOperationResult::kOK)
     ErrorCount++;
+  CountingCurrentFile = false;
   return S_OK;
 }
 
@@ -270,6 +276,7 @@ Z7_COM7F_IMF(CExtractCb::GetStream(UInt32 index,
     ISequentialOutStream **outStream, Int32 askExtractMode))
 {
   *outStream = NULL;
+  CountingCurrentFile = false;
   if (askExtractMode != NArchive::NExtract::NAskMode::kExtract)
     return S_OK;
 
@@ -354,6 +361,10 @@ Z7_COM7F_IMF(CExtractCb::GetStream(UInt32 index,
         SkippedCount++;
         return S_OK;
       }
+      if (OverwritePolicy == 0 && OverwriteCb && !OverwriteCb(fullPath.Ptr(), OverwriteUserData)) {
+        SkippedCount++;
+        return S_OK;
+      }
     }
   }
 
@@ -362,9 +373,9 @@ Z7_COM7F_IMF(CExtractCb::GetStream(UInt32 index,
   if (!_outFileStreamSpec->Create_ALWAYS(fullPath))
     return E_FAIL;
 
+  CountingCurrentFile = true;
   _outFileStream = outStreamLoc;
   *outStream = outStreamLoc.Detach();
-  ExtractedCount++;
   return S_OK;
 }
 
@@ -712,7 +723,10 @@ FmExtractResult fm_archive_extract_ex(FmArchive *archive, const uint32_t *indice
     ecbSpec->CachedPassword = archive->bridge->cachedPassword;
   ecbSpec->PasswordCb = archive->bridge->passwordCb;
   ecbSpec->PasswordUserData = archive->bridge->passwordUserData;
+  ecbSpec->OverwriteCb = archive->bridge->overwriteCb;
+  ecbSpec->OverwriteUserData = archive->bridge->overwriteUserData;
   ecbSpec->ArchivePath = archive->archivePath ? archive->archivePath : "";
+  ecbSpec->CountingCurrentFile = false;
 
   FString dest(dest_path);
   if (dest.Len() > 0 && dest.Back() != FCHAR_PATH_SEPARATOR)
