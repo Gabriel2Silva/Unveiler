@@ -1,6 +1,6 @@
 # Unveiler
 
-A GTK4/libadwaita archive manager for Linux, built on [7-Zip](https://7-zip.org) 26.01.
+A GTK4/libadwaita archive manager for Linux, built on [7-Zip](https://7-zip.org) 26.02.
 Unveiler brings the familiar Windows 7-Zip experience to Linux, making it easy for former Windows users to feel right at home.
 
 ![GNOME](https://img.shields.io/badge/GNOME-GTK4%20%2B%20libadwaita-blue) ![GitHub top language](https://img.shields.io/github/languages/top/Gabriel2Silva/Unveiler)
