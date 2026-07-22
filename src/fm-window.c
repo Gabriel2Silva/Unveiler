@@ -454,6 +454,8 @@ collect_extract_indices(FmWindow *self)
 static gboolean
 extract_targets_conflict(FmWindow *self, GArray *indices, const char *dest)
 {
+  g_autofree char *canon_dest = g_canonicalize_filename(dest, NULL);
+
   for (guint i = 0; i < indices->len; i++) {
     uint32_t index = g_array_index(indices, uint32_t, i);
     if (fm_archive_is_dir(self->archive, index))
@@ -463,7 +465,18 @@ extract_targets_conflict(FmWindow *self, GArray *indices, const char *dest)
     if (!is_safe_relative_extract_path(relpath))
       continue;
 
+    /* Treat trailing slash as a directory even if fm_archive_is_dir was false */
+    size_t len = strlen(relpath);
+    if (len > 0 && (relpath[len - 1] == '/' || relpath[len - 1] == '\\'))
+      continue;
+
     g_autofree char *fullpath = g_build_filename(dest, relpath, NULL);
+    
+    /* Skip if path resolves to the destination folder itself (e.g. \".\" entries) */
+    g_autofree char *canon_full = g_canonicalize_filename(fullpath, NULL);
+    if (g_strcmp0(canon_full, canon_dest) == 0)
+      continue;
+
     if (g_file_test(fullpath, G_FILE_TEST_EXISTS))
       return TRUE;
   }
@@ -748,6 +761,18 @@ extract_thread_func(gpointer ud)
 /* ---- extract folder response ---- */
 
 static void
+on_extraction_success_response(AdwAlertDialog *dialog, const char *response, char *folder_path)
+{
+  (void)dialog;
+  if (g_strcmp0(response, "open") == 0) {
+    g_autofree char *uri = g_filename_to_uri(folder_path, NULL, NULL);
+    if (uri)
+      g_app_info_launch_default_for_uri(uri, NULL, NULL);
+  }
+  g_free(folder_path);
+}
+
+static void
 on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
 {
   FmWindow *self = FM_WINDOW(ud);
@@ -774,6 +799,13 @@ on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
       gtk_widget_set_margin_bottom(oc, 8);
       gtk_box_append(GTK_BOX(oc),
           gtk_label_new("Some extracted files already exist in the destination."));
+
+      GtkWidget *btn = gtk_dialog_get_widget_for_response(GTK_DIALOG(odlg), GTK_RESPONSE_CANCEL);
+      if (btn) {
+        GtkWidget *action_area = gtk_widget_get_parent(btn);
+        if (action_area)
+          gtk_widget_set_halign(action_area, GTK_ALIGN_CENTER);
+      }
 
       ModalDlgData odata = { FALSE, GTK_RESPONSE_CANCEL };
       g_signal_connect(odlg, "response", G_CALLBACK(on_modal_response), &odata);
@@ -871,6 +903,18 @@ on_extract_folder_response(GObject *source, GAsyncResult *res, gpointer ud)
     msg = g_strdup_printf("Extracted %d file%s to %s",
         r.extracted, r.extracted == 1 ? "" : "s", dest);
   gtk_label_set_text(GTK_LABEL(self->status), msg);
+
+  if (r.ok && (r.extracted > 0 || r.skipped > 0)) {
+    AdwDialog *dlg = adw_alert_dialog_new("Extraction Complete", msg);
+    adw_alert_dialog_add_response(ADW_ALERT_DIALOG(dlg), "close", "_Close");
+    adw_alert_dialog_add_response(ADW_ALERT_DIALOG(dlg), "open", "_Open Folder");
+    adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dlg), "open", ADW_RESPONSE_SUGGESTED);
+    adw_alert_dialog_set_default_response(ADW_ALERT_DIALOG(dlg), "open");
+    adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dlg), "close");
+    
+    g_signal_connect(dlg, "response", G_CALLBACK(on_extraction_success_response), g_strdup(dest));
+    adw_dialog_present(dlg, GTK_WIDGET(self));
+  }
 }
 
 static void
@@ -1082,6 +1126,13 @@ overwrite_cb(const char *file_path, void *user_data)
   gtk_widget_set_margin_bottom(content, 8);
   gtk_box_append(GTK_BOX(content), gtk_label_new(msg));
 
+  GtkWidget *btn = gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_NO);
+  if (btn) {
+    GtkWidget *action_area = gtk_widget_get_parent(btn);
+    if (action_area)
+      gtk_widget_set_halign(action_area, GTK_ALIGN_CENTER);
+  }
+
   OwDlgData data = { FALSE, GTK_RESPONSE_NO };
   g_signal_connect(dialog, "response", G_CALLBACK(on_ow_response), &data);
   gtk_window_present(GTK_WINDOW(dialog));
@@ -1142,6 +1193,13 @@ password_cb(const char *archive_path, void *user_data)
 
   /* Enter key confirms the dialog */
   g_signal_connect(entry, "activate", G_CALLBACK(on_pw_entry_activate), dialog);
+
+  GtkWidget *btn = gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CANCEL);
+  if (btn) {
+    GtkWidget *action_area = gtk_widget_get_parent(btn);
+    if (action_area)
+      gtk_widget_set_halign(action_area, GTK_ALIGN_CENTER);
+  }
 
   PwDlgData data = { FALSE, GTK_RESPONSE_CANCEL };
   g_signal_connect(dialog, "response", G_CALLBACK(on_pw_response), &data);
