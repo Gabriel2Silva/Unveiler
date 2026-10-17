@@ -1,4 +1,4 @@
-/* fm-bridge.cpp — C++ bridge between 7z.so and the C API */
+/* fm-bridge.cpp - C++ bridge between 7z.so and the C API */
 
 #include "StdAfx.h"
 
@@ -81,7 +81,7 @@ public:
   COutFileStream *_outFileStreamSpec;
   CMyComPtr<ISequentialOutStream> _outFileStream;
 
-  /* thread-safe copies of bridge state — snapshot at extract start */
+  /* thread-safe copies of bridge state, snapshot at extract start */
   int OverwritePolicy;
   AString CachedPassword;
   FmPasswordCb PasswordCb;
@@ -249,7 +249,7 @@ static bool IsPathUnderDir(const char *fsPath, const char *resolvedRoot, size_t 
   char *resolved = realpath(fsPath, NULL);
   if (!resolved)
   {
-    /* Path doesn't exist yet — resolve the parent directory instead.
+    /* Path doesn't exist yet, resolve the parent directory instead.
        This catches the case where a symlink exists as a parent component. */
     AString parent(fsPath);
     int sep = parent.ReverseFind_PathSepar();
@@ -260,7 +260,7 @@ static bool IsPathUnderDir(const char *fsPath, const char *resolvedRoot, size_t 
     }
     if (!resolved)
     {
-      /* Can't resolve at all — the destination root itself may not exist yet.
+      /* Can't resolve at all, the destination root itself may not exist yet.
          If we can't resolve, allow it (CreateComplexDir will handle errors). */
       return true;
     }
@@ -289,7 +289,7 @@ Z7_COM7F_IMF(CExtractCb::GetStream(UInt32 index,
     return E_FAIL;
 
   if (path.IsEmpty()) {
-    /* gzip/bz2/xz wrappers don't store inner filename — derive from archive name */
+    /* gzip/bz2/xz wrappers don't store inner filename, derive from archive name */
     if (!ArchivePath.IsEmpty()) {
       AString apath(ArchivePath);
       int sep = apath.ReverseFind_PathSepar();
@@ -545,7 +545,7 @@ static bool ext_matches(FmBridge *bridge, UInt32 fi, const char *path)
   if (propExt.vt != VT_BSTR)
     return false;
 
-  /* get file extension(s) from path — handle .tar.gz etc */
+  /* get file extension(s) from path, handle .tar.gz etc */
   const char *basename = strrchr(path, '/');
   basename = basename ? basename + 1 : path;
   const char *dot = strchr(basename, '.');

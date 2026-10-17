@@ -1,4 +1,4 @@
-/* test-suite.c — automated tests for the Unveiler bridge API */
+/* test-suite.c - automated tests for the Unveiler bridge API */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -382,7 +382,7 @@ TEST(open_nonexistent_file)
 TEST(open_invalid_file)
 {
   (void)archdir;
-  /* create a file that isn't an archive — 7z may still "open" it
+  /* create a file that isn't an archive, 7z may still "open" it
      as a raw format, so we just verify it doesn't crash */
   char path[4096];
   snprintf(path, sizeof(path), "%s/not_an_archive.txt", tmpdir);
@@ -391,7 +391,7 @@ TEST(open_invalid_file)
   fclose(f);
 
   FmArchive *ar = fm_archive_open(bridge, path);
-  /* either NULL (rejected) or valid handle (raw format) — both are fine */
+  /* either NULL (rejected) or valid handle (raw format) both are fine */
   if (ar) {
     /* if opened, count should be sane */
     ASSERT(fm_archive_get_count(ar) <= 1);

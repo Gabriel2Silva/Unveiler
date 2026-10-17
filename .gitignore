@@ -1,0 +1,19 @@
+# Build output directories
+_o/
+**/_o/
+
+# Compiled objects and libraries
+*.o
+*.so
+*.a
+
+# Standalone binary outputs in project root
+/unveiler
+/test-bridge
+/test-suite
+
+# Temporary and editor files
+*~
+*.swp
+*.bak
+.DS_Store

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/org/unveiler/App/icons">
+    <file alias="scalable/apps/org.gnome.FileRoller.svg">org.gnome.FileRoller.svg</file>
+    <file alias="scalable/apps/org.unveiler.App.svg">org.gnome.FileRoller.svg</file>
+  </gresource>
+</gresources>

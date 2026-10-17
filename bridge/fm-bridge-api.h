@@ -1,4 +1,4 @@
-/* fm-bridge-api.h — C API for 7-Zip archive browsing via 7z.so */
+/* fm-bridge-api.h - C API for 7-Zip archive browsing via 7z.so */
 #ifndef FM_BRIDGE_API_H
 #define FM_BRIDGE_API_H
 
@@ -12,7 +12,7 @@ extern "C" {
 typedef struct FmBridge   FmBridge;
 typedef struct FmArchive  FmArchive;
 
-/* Library lifecycle — call once at startup/shutdown */
+/* Library lifecycle, call once at startup/shutdown */
 FmBridge *fm_bridge_new    (const char *lib_path);  /* path to 7z.so */
 void      fm_bridge_free   (FmBridge *bridge);
 
@@ -29,12 +29,12 @@ FmBridge *fm_bridge_new_auto(void);
 FmArchive *fm_archive_open  (FmBridge *bridge, const char *path);
 void       fm_archive_close (FmArchive *archive);
 
-/* Password callback — return newly allocated string, or NULL to cancel.
+/* Password callback, return newly allocated string, or NULL to cancel.
  * Set on the bridge before calling fm_archive_open. */
 typedef char *(*FmPasswordCb)(const char *archive_path, void *user_data);
 void fm_bridge_set_password_cb(FmBridge *bridge, FmPasswordCb cb, void *user_data);
 
-/* Overwrite callback — return true to overwrite, false to skip.
+/* Overwrite callback, return true to overwrite, false to skip.
  * Set on the bridge before calling fm_archive_extract. */
 typedef bool (*FmOverwriteCb)(const char *file_path, void *user_data);
 void fm_bridge_set_overwrite_cb(FmBridge *bridge, FmOverwriteCb cb, void *user_data);
@@ -52,7 +52,7 @@ int64_t    fm_archive_get_mtime (FmArchive *archive, uint32_t index); /* unix ti
 /* Archive format info */
 const char *fm_archive_get_format (FmArchive *archive);
 
-/* Extraction — returns number of files extracted, or -1 on error */
+/* Extraction, returns number of files extracted, or -1 on error */
 typedef void (*FmProgressCb)(uint64_t completed, uint64_t total, void *user_data);
 
 /* Detailed extraction result */
@@ -72,7 +72,7 @@ FmExtractResult fm_archive_extract_ex(FmArchive       *archive,
                                       FmProgressCb     cb,
                                       void            *user_data);
 
-/* Simple extract — backward compatible, returns extracted count or -1 */
+/* Simple extract, backward compatible, returns extracted count or -1 */
 int fm_archive_extract (FmArchive       *archive,
                         const uint32_t  *indices,    /* NULL = all */
                         uint32_t         count,

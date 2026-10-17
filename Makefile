@@ -119,10 +119,16 @@ clean:
 GTK_CFLAGS = $(shell pkg-config --cflags gtk4 libadwaita-1)
 GTK_LIBS   = $(shell pkg-config --libs   gtk4 libadwaita-1)
 
-GTK_OBJS = $(O)/main.o $(O)/fm-window.o $(O)/fm-file-item.o
+GTK_OBJS = $(O)/main.o $(O)/fm-window.o $(O)/fm-file-item.o $(O)/resources.o
 
 $(O)/unveiler: $(GTK_OBJS) $(ALL_OBJS)
 	$(CC) -pie -o $@ $(GTK_OBJS) $(ALL_OBJS) $(GTK_LIBS) $(LDFLAGS) -lstdc++
+
+$(O)/resources.c: resources.gresource.xml org.gnome.FileRoller.svg | $(O)
+	glib-compile-resources --target=$@ --generate-source $<
+
+$(O)/resources.o: $(O)/resources.c
+	$(CC) $(CFLAGS) $(GTK_CFLAGS) -c -o $@ $<
 
 $(O)/main.o: src/main.c src/fm-window.h
 	$(CC) $(CFLAGS) $(GTK_CFLAGS) -Isrc -c -o $@ $<
@@ -154,10 +160,16 @@ install: $(O)/unveiler
 	install -Dm755 $(O)/unveiler $(DESTDIR)$(PREFIX)/bin/unveiler
 	install -Dm755 7zip-main/CPP/7zip/Bundles/Format7zF/_o/7z.so $(DESTDIR)$(PREFIX)/lib/unveiler/7z.so
 	install -Dm644 org.unveiler.App.desktop $(DESTDIR)$(PREFIX)/share/applications/org.unveiler.App.desktop
+	install -Dm644 org.gnome.FileRoller.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/org.gnome.FileRoller.svg
+	install -Dm644 org.gnome.FileRoller.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/org.unveiler.App.svg
+	-gtk-update-icon-cache -q -t -f $(DESTDIR)$(PREFIX)/share/icons/hicolor 2>/dev/null
 	-update-desktop-database $(DESTDIR)$(PREFIX)/share/applications 2>/dev/null
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/unveiler
 	rm -f $(DESTDIR)$(PREFIX)/lib/unveiler/7z.so
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/org.unveiler.App.desktop
+	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/org.gnome.FileRoller.svg
+	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/org.unveiler.App.svg
+	-gtk-update-icon-cache -q -t -f $(DESTDIR)$(PREFIX)/share/icons/hicolor 2>/dev/null
 	-rmdir $(DESTDIR)$(PREFIX)/lib/unveiler

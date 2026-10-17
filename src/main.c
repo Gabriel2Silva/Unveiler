@@ -20,10 +20,18 @@ on_open(GApplication *app, GFile **files, int n, const char *hint, gpointer ud)
     fm_window_open_archive(win, files[0]);
 }
 
+static void
+on_startup(GApplication *app, gpointer ud)
+{
+  (void)app; (void)ud;
+  gtk_window_set_default_icon_name("org.gnome.FileRoller");
+}
+
 int main(int argc, char *argv[])
 {
   AdwApplication *app = adw_application_new("org.unveiler.App",
                                             G_APPLICATION_HANDLES_OPEN);
+  g_signal_connect(app, "startup",  G_CALLBACK(on_startup),  NULL);
   g_signal_connect(app, "activate", G_CALLBACK(on_activate), NULL);
   g_signal_connect(app, "open",     G_CALLBACK(on_open),     NULL);
   int status = g_application_run(G_APPLICATION(app), argc, argv);

@@ -49,7 +49,7 @@ static void on_modal_response(GtkDialog *d, int r, gpointer ud) {
 
 /* ---- helpers ---- */
 
-/* Safe recursive directory removal — no shell involved */
+/* Safe recursive directory removal - no shell involved */
 static void
 remove_dir_recursive(const char *path)
 {
@@ -121,7 +121,7 @@ populate_store(FmWindow *self)
     const char *sep = strchr(rest, '/');
 
     if (sep == NULL) {
-      /* direct child — could be a file or an explicit dir entry */
+      /* direct child - could be a file or an explicit dir entry */
       gboolean is_dir = fm_archive_is_dir(self->archive, i);
       if (is_dir) {
         if (g_hash_table_contains(seen_dirs, rest)) { free(path); continue; }
@@ -135,7 +135,7 @@ populate_store(FmWindow *self)
       g_list_store_insert_sorted(self->store, item, item_compare, NULL);
       g_object_unref(item);
     } else {
-      /* directory child — deduplicate */
+      /* directory child - deduplicate */
       g_autofree char *dirname = g_strndup(rest, (gsize)(sep - rest));
       if (!g_hash_table_contains(seen_dirs, dirname)) {
         g_hash_table_add(seen_dirs, g_strdup(dirname));
@@ -151,7 +151,7 @@ populate_store(FmWindow *self)
   /* update status */
   uint32_t count = g_list_model_get_n_items(G_LIST_MODEL(self->store));
   g_autofree char *status_text = g_strdup_printf(
-      "%s — %u items — %s",
+      "%s - %u items - %s",
       self->archive_path ? self->archive_path : "",
       count,
       fm_archive_get_format(self->archive));
@@ -528,7 +528,7 @@ on_activate(GtkColumnView *cv, guint position, gpointer ud)
               self->archive = nested;
               g_free(self->archive_path);
               self->archive_path = g_strdup(filepath);
-              g_autofree char *title = g_strdup_printf("%s — %s",
+              g_autofree char *title = g_strdup_printf("%s - %s",
                   g_path_get_basename(self->archive_path),
                   fm_archive_get_format(nested));
               gtk_window_set_title(GTK_WINDOW(self), title);
@@ -538,7 +538,7 @@ on_activate(GtkColumnView *cv, guint position, gpointer ud)
             }
           }
 
-          /* not an archive — open with default app */
+          /* not an archive - open with default app */
           GFile *file = g_file_new_for_path(filepath);
           GtkFileLauncher *launcher = gtk_file_launcher_new(file);
           gtk_file_launcher_launch(launcher, GTK_WINDOW(self), NULL, NULL, NULL);
@@ -605,7 +605,7 @@ action_up(GtkWidget *widget, const char *name, GVariant *param)
   FmWindow *self = FM_WINDOW(widget);
 
   if (!self->current_dir || self->current_dir[0] == '\0') {
-    /* at root — pop nested archive stack if possible */
+    /* at root - pop nested archive stack if possible */
     if (self->archive_stack && self->archive_stack->len > 0) {
       FmArchiveFrame *frame = g_ptr_array_steal_index(
           self->archive_stack, self->archive_stack->len - 1);
@@ -620,7 +620,7 @@ action_up(GtkWidget *widget, const char *name, GVariant *param)
         remove_dir_recursive(frame->temp_dir);
         g_free(frame->temp_dir);
       }
-      g_free(frame);  /* don't use archive_frame_free — we took ownership */
+      g_free(frame);  /* don't use archive_frame_free - we took ownership */
       g_autofree char *basename = g_path_get_basename(self->archive_path);
       gtk_window_set_title(GTK_WINDOW(self), basename);
       populate_store(self);
@@ -963,7 +963,7 @@ on_search_changed(GtkSearchEntry *entry, gpointer ud)
   const char *query = gtk_editable_get_text(GTK_EDITABLE(self->search_entry));
 
   if (!query || !*query) {
-    /* search cleared — restore normal directory view */
+    /* search cleared - restore normal directory view */
     populate_store(self);
     return;
   }
@@ -1010,7 +1010,7 @@ action_search(GtkWidget *widget, const char *name, GVariant *param)
   if (!active) {
     gtk_widget_grab_focus(self->search_entry);
   } else {
-    /* closing search — restore directory view */
+    /* closing search - restore directory view */
     gtk_editable_set_text(GTK_EDITABLE(self->search_entry), "");
     populate_store(self);
   }
@@ -1249,7 +1249,7 @@ on_drag_prepare(GtkDragSource *src, double x, double y, gpointer ud)
   }
   tmpdir = g_strdup(tmpdir);
 
-  /* extract to temp dir — blocks briefly */
+  /* extract to temp dir - blocks briefly */
   int rc = fm_archive_extract(self->archive,
       (const uint32_t *)indices->data, indices->len,
       tmpdir, NULL, NULL);
@@ -1434,6 +1434,7 @@ fm_window_init(FmWindow *self)
 
   gtk_window_set_default_size(GTK_WINDOW(self), 800, 600);
   gtk_window_set_title(GTK_WINDOW(self), "Unveiler");
+  gtk_window_set_icon_name(GTK_WINDOW(self), "org.gnome.FileRoller");
 }
 
 static void
@@ -1524,7 +1525,7 @@ void fm_window_open_archive(FmWindow *self, GFile *file)
           uint32_t idx = 0;
           int rc = fm_archive_extract(self->archive, &idx, 1, tmpdir, NULL, NULL);
           if (rc > 0) {
-            /* the extracted file might have a different name — find it */
+            /* the extracted file might have a different name - find it */
             GDir *dir = g_dir_open(tmpdir, 0, NULL);
             const char *extracted_name = dir ? g_dir_read_name(dir) : NULL;
             if (extracted_name) {
