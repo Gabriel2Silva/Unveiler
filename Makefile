@@ -47,7 +47,9 @@ BRIDGE_OBJS = $(O)/fm-bridge.o
 
 ALL_OBJS = $(C_OBJS) $(COMMON_OBJS) $(WIN_OBJS) $(SYS_OBJS) $(Z7_OBJS) $(BRIDGE_OBJS)
 
-all: $(O) $(O)/lib7zbridge.so $(O)/test-bridge $(O)/unveiler
+all: $(O) $(O)/lib7zbridge.so $(O)/unveiler
+
+test-bridge: $(O)/test-bridge
 
 $(O):
 	mkdir -p $(O)
@@ -62,8 +64,8 @@ $(O)/test-bridge: $(O)/test-bridge.o $(ALL_OBJS)
 $(O)/fm-bridge.o: bridge/fm-bridge.cpp bridge/fm-bridge-api.h bridge/StdAfx.h
 	$(CXX) $(CXXFLAGS) -Ibridge -I$(SRC_7Z) -c -o $@ $<
 
-$(O)/test-bridge.o: test-bridge.c bridge/fm-bridge-api.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+$(O)/test-bridge.o: tests/test-bridge.c bridge/fm-bridge-api.h
+	$(CC) $(CFLAGS) -I. -c -o $@ $<
 
 # 7-Zip Common
 $(O)/IntToString.o: $(SRC_7Z)/Common/IntToString.cpp
@@ -139,7 +141,7 @@ $(O)/fm-window.o: src/fm-window.c src/fm-window.h src/fm-file-item.h bridge/fm-b
 $(O)/fm-file-item.o: src/fm-file-item.c src/fm-file-item.h
 	$(CC) $(CFLAGS) $(GTK_CFLAGS) -Isrc -c -o $@ $<
 
-.PHONY: all clean install uninstall test
+.PHONY: all clean install uninstall test test-bridge
 
 # ---- tests ----
 
